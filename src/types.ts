@@ -49,6 +49,7 @@ export interface TextStyle {
   textDecoration: string;
   textTransform: string;
   whiteSpace: string;
+  textShadow: string;
 }
 
 export interface HtmlFrame {
@@ -88,6 +89,22 @@ export interface HtmlSvg {
 
 export type HtmlNode = HtmlFrame | HtmlText | HtmlImage | HtmlSvg;
 
+/** An image rasterized to PNG in the render iframe. */
+export interface ImageAsset {
+  bytes: Uint8Array;
+  /** Pixel size of the PNG. */
+  width: number;
+  height: number;
+  /** CSS size of the image (differs from the pixel size for upscaled SVGs). */
+  intrinsicWidth: number;
+}
+
+/**
+ * PNG data for image sources the render iframe could read, keyed by source URL.
+ * Sources missing here (e.g. cross-origin without CORS) are fetched by the plugin.
+ */
+export type ImageAssets = Record<string, ImageAsset>;
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -101,14 +118,14 @@ export const DEFAULT_VIEWPORT = { width: 1440, height: 900 };
 export type SerializerPayload =
   /** The page's own width differs from the iframe's: resize the iframe. */
   | { type: 'resize'; width: number; height: number }
-  | { type: 'done'; tree: HtmlFrame }
+  | { type: 'done'; tree: HtmlFrame; images: ImageAssets }
   | { type: 'error'; error: string };
 
 export type SerializerMessage = SerializerPayload & { source: typeof SERIALIZER_SOURCE };
 
 // Messages sent from the UI iframe to the plugin sandbox.
 export type UiToPluginMessage =
-  | { type: 'import-tree'; tree: HtmlFrame }
+  | { type: 'import-tree'; tree: HtmlFrame; images: ImageAssets }
   | { type: 'cancel' };
 
 // Messages sent from the plugin sandbox to the UI iframe.
