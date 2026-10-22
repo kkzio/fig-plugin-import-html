@@ -1,0 +1,16 @@
+{
+  "name": "fig-plugin-import-html",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Figma plugin that converts a single HTML file into Figma layers",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.142.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

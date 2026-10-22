@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    font: 12px/1.4 Inter, system-ui, sans-serif;
+    color: var(--figma-color-text, #333);
+    background: var(--figma-color-bg, #fff);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100vh;
+  }
+  label { font-weight: 600; display: block; margin-bottom: 4px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  #file-name {
+    color: var(--figma-color-text-secondary, #888);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .field { display: flex; flex-direction: column; }
+  .grow { flex: 1; min-height: 0; }
+  textarea {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    background: var(--figma-color-bg-secondary, #f5f5f5);
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    border-radius: 4px;
+    padding: 6px 8px;
+  }
+  textarea { flex: 1; resize: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+  button {
+    font: inherit; font-weight: 600;
+    border-radius: 6px; padding: 7px 12px; cursor: pointer;
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    background: var(--figma-color-bg, #fff); color: inherit;
+  }
+  button.primary {
+    background: var(--figma-color-bg-brand, #0d99ff);
+    color: var(--figma-color-text-onbrand, #fff);
+    border-color: transparent;
+  }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #status { margin: 0; min-height: 17px; color: var(--figma-color-text-secondary, #888); }
+  #status[data-kind="error"] { color: var(--figma-color-text-danger, #f24822); }
+  input[type="file"] { display: none; }
+  /* Laid out at full size (so the page renders normally) but never visible. */
+  .render-frame {
+    position: fixed; top: 0; left: 0;
+    border: 0; opacity: 0; pointer-events: none; z-index: -1;
+  }
+</style>
+</head>
+<body>
+  <div class="field">
+    <label>HTML file</label>
+    <div class="row">
+      <button id="choose" type="button">Choose .html file</button>
+      <span id="file-name">No file chosen</span>
+      <input id="file" type="file" accept=".html,.htm,text/html" />
+    </div>
+  </div>
+
+  <div class="field grow">
+    <label for="source">…or paste HTML</label>
+    <textarea id="source" spellcheck="false" placeholder="<!doctype html>&#10;<html>…</html>"></textarea>
+  </div>
+
+  <p id="status"></p>
+
+  <div class="actions">
+    <button id="cancel" type="button">Cancel</button>
+    <button id="import" type="button" class="primary">Import</button>
+  </div>
+
+  <!-- UI_SCRIPT -->
+</body>
+</html>
