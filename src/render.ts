@@ -1,14 +1,26 @@
 import serializerScript from 'serializer-script';
-import { DEFAULT_VIEWPORT, SERIALIZER_SOURCE, type HtmlFrame, type SerializerMessage } from './types';
+import {
+  DEFAULT_VIEWPORT,
+  SERIALIZER_SOURCE,
+  type HtmlFrame,
+  type ImageAssets,
+  type SerializerMessage,
+} from './types';
 
-const RENDER_TIMEOUT_MS = 20000;
+/** Covers page load, settling, resizing and image rasterizing. */
+const RENDER_TIMEOUT_MS = 45000;
+
+export interface RenderResult {
+  tree: HtmlFrame;
+  images: ImageAssets;
+}
 
 /**
  * Renders the HTML (running its scripts) in a hidden sandboxed iframe and resolves
- * with the serialized tree. The serializer detects the page's own width and asks
- * for the iframe to be resized to it before serializing.
+ * with the serialized tree and its rasterized images. The serializer detects the
+ * page's own width and asks for the iframe to be resized to it before serializing.
  */
-export function renderHtml(html: string): Promise<HtmlFrame> {
+export function renderHtml(html: string): Promise<RenderResult> {
   const iframe = document.createElement('iframe');
   // Scripts only: the page cannot reach the plugin UI's DOM or storage.
   iframe.setAttribute('sandbox', 'allow-scripts');
@@ -35,7 +47,7 @@ export function renderHtml(html: string): Promise<HtmlFrame> {
           setSize(msg.width, msg.height);
           break;
         case 'done':
-          finish(null, msg.tree);
+          finish(null, { tree: msg.tree, images: msg.images });
           break;
         case 'error':
           finish(new Error(msg.error));
@@ -43,12 +55,12 @@ export function renderHtml(html: string): Promise<HtmlFrame> {
       }
     }
 
-    function finish(error: Error | null, tree?: HtmlFrame) {
+    function finish(error: Error | null, result?: RenderResult) {
       clearTimeout(timer);
       window.removeEventListener('message', onMessage);
       iframe.remove();
       if (error) reject(error);
-      else resolve(tree!);
+      else resolve(result!);
     }
 
     window.addEventListener('message', onMessage);

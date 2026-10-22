@@ -1,6 +1,7 @@
 // Runs *inside* the render iframe, appended to the user's HTML. Waits for the page
 // (and its scripts) to settle, walks the DOM and posts a serialized tree to the UI.
 import { parseColor } from './css';
+import { collectImageSources } from './tree';
 import {
   DEFAULT_VIEWPORT,
   SERIALIZER_SOURCE,
@@ -10,6 +11,8 @@ import {
   type HtmlNode,
   type HtmlSvg,
   type HtmlText,
+  type ImageAsset,
+  type ImageAssets,
   type Rect,
   type SerializerPayload,
   type TextStyle,
@@ -112,6 +115,7 @@ function textStyle(cs: CSSStyleDeclaration, color = cs.color): TextStyle {
     textDecoration: cs.textDecorationLine,
     textTransform: cs.textTransform,
     whiteSpace: cs.whiteSpace,
+    textShadow: cs.textShadow,
   };
 }
 
@@ -365,6 +369,78 @@ function serializeDocument(): HtmlFrame {
 }
 
 // ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
+/** Max time to load one image for rasterizing. */
+const IMAGE_TIMEOUT_MS = 8000;
+/** Figma rejects images larger than this on either side. */
+const MAX_IMAGE_SIZE = 4096;
+
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    // Cross-origin images can only be read back from a canvas when served with CORS.
+    if (/^https?:/i.test(src)) img.crossOrigin = 'anonymous';
+    const timer = setTimeout(() => resolve(null), IMAGE_TIMEOUT_MS);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+    img.src = src;
+  });
+}
+
+/**
+ * Draws an image to a canvas and returns PNG bytes, or null if it cannot be loaded
+ * or read (cross-origin without CORS). `drawnSize` is the largest size it appears at.
+ */
+async function rasterize(src: string, drawnSize: { width: number; height: number }): Promise<ImageAsset | null> {
+  const img = await loadImage(src);
+  if (!img) return null;
+
+  const intrinsicWidth = img.naturalWidth || drawnSize.width;
+  let width = intrinsicWidth;
+  let height = img.naturalHeight || drawnSize.height;
+  // SVGs have no pixel size of their own: rasterize at 2× the drawn size to stay sharp.
+  if (/^data:image\/svg|\.svg(?:[?#]|$)/i.test(src)) {
+    const scale = Math.max((2 * drawnSize.width) / width, (2 * drawnSize.height) / height, 1);
+    width *= scale;
+    height *= scale;
+  }
+  const fit = Math.min(1, MAX_IMAGE_SIZE / width, MAX_IMAGE_SIZE / height);
+  width = Math.max(1, Math.round(width * fit));
+  height = Math.max(1, Math.round(height * fit));
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), width, height, intrinsicWidth };
+  } catch {
+    return null; // tainted canvas
+  }
+}
+
+async function rasterizeImages(tree: HtmlFrame): Promise<ImageAssets> {
+  const images: ImageAssets = {};
+  await Promise.all(
+    Array.from(collectImageSources(tree), async ([src, drawnSize]) => {
+      const asset = await rasterize(src, drawnSize);
+      if (asset) images[src] = asset;
+    }),
+  );
+  return images;
+}
+
+// ---------------------------------------------------------------------------
 // Viewport detection
 // ---------------------------------------------------------------------------
 
@@ -534,7 +610,8 @@ async function run() {
       await settle(); // let resize handlers and media queries apply
     }
 
-    post({ type: 'done', tree: serializeDocument() });
+    const tree = serializeDocument();
+    post({ type: 'done', tree, images: await rasterizeImages(tree) });
   } catch (error) {
     post({ type: 'error', error: String(error) });
   }

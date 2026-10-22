@@ -83,3 +83,62 @@ export function parsePx(value: string): number | null {
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Splits on commas outside parentheses and quotes: `a(1, 2), b` → [`a(1, 2)`, `b`]. */
+export function splitTopLevel(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote = '';
+  let current = '';
+  for (const ch of value) {
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+/** The URL of a `url(…)` background layer, or null for other layers (gradients). */
+export function cssUrl(layer: string): string | null {
+  const match = layer.match(/^url\(\s*(["']?)([\s\S]*)\1\s*\)$/);
+  return match ? match[2] : null;
+}
+
+export interface Shadow {
+  inset: boolean;
+  x: number;
+  y: number;
+  blur: number;
+  spread: number;
+  color: Rgba;
+}
+
+/** Parses computed `box-shadow` / `text-shadow` (e.g. `rgba(0, 0, 0, 0.2) 0px 8px 24px 0px`). */
+export function parseShadows(value: string): Shadow[] {
+  if (!value || value === 'none') return [];
+  return splitTopLevel(value).map((layer) => {
+    const colorToken = layer.match(/[a-z-]+\([^)]*\)|#[0-9a-f]{3,8}\b|\btransparent\b/i)?.[0];
+    const rest = (colorToken ? layer.replace(colorToken, '') : layer).replace(/\binset\b/, '');
+    const [x = 0, y = 0, blur = 0, spread = 0] = rest.trim().split(/\s+/).filter(Boolean).map(parseFloat);
+    return {
+      inset: /\binset\b/.test(layer),
+      x,
+      y,
+      blur,
+      spread,
+      color: (colorToken && parseColor(colorToken)) || { r: 0, g: 0, b: 0, a: 1 },
+    };
+  });
+}

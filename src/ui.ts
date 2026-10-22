@@ -52,10 +52,10 @@ importBtn.addEventListener('click', async () => {
   importBtn.disabled = true;
   setStatus('Rendering HTML…');
   try {
-    const tree = await renderHtml(html);
+    const { tree, images } = await renderHtml(html);
     tree.name ||= currentName.replace(/\.html?$/i, '');
     setStatus(`Creating layers (${tree.rect.width}px wide)…`);
-    postToPlugin({ type: 'import-tree', tree });
+    postToPlugin({ type: 'import-tree', tree, images });
   } catch (error) {
     setStatus(error instanceof Error ? error.message : String(error), 'error');
     updateButton();

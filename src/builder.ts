@@ -2,7 +2,9 @@
 // positioned inside its parent frame, using the coordinates measured by the browser.
 import { parsePx, solidPaint } from './css';
 import { fontKey, loadFonts, type LoadedFonts } from './fonts';
-import type { BoxStyle, HtmlFrame, HtmlImage, HtmlNode, HtmlSvg, HtmlText, Rect } from './types';
+import { loadImages, type LoadedImage } from './images';
+import { backgroundPaints, objectFitPaint, shadowEffects } from './paints';
+import type { BoxStyle, HtmlFrame, HtmlImage, HtmlNode, HtmlSvg, HtmlText, ImageAssets, Rect } from './types';
 
 /** Figma rejects sizes below 0.01. */
 const MIN_SIZE = 0.01;
@@ -29,13 +31,20 @@ export interface BuildResult {
   missingFonts: string[];
   /** SVGs Figma could not parse (imported as placeholders). */
   failedSvgs: number;
+  /** Images that could not be loaded (imported as placeholders or left out). */
+  failedImages: number;
 }
+
+type BoxNode = FrameNode | RectangleNode;
 
 class Builder {
   layerCount = 0;
   failedSvgs = 0;
 
-  constructor(private fonts: LoadedFonts) {}
+  constructor(
+    private fonts: LoadedFonts,
+    private images: Map<string, LoadedImage>,
+  ) {}
 
   build(node: HtmlNode, parent: Rect): SceneNode {
     this.layerCount++;
@@ -47,7 +56,7 @@ class Builder {
       case 'svg':
         return this.svg(node, parent);
       case 'image':
-        return this.placeholder(node, parent);
+        return this.image(node, parent);
     }
   }
 
@@ -61,7 +70,7 @@ class Builder {
     const frame = figma.createFrame();
     frame.name = node.name;
     this.place(frame, node.rect, parent);
-    applyBoxStyle(frame, node.style);
+    applyBoxStyle(frame, node.style, node.rect, this.images);
     frame.clipsContent = node.style.clips;
     for (const child of node.children) frame.appendChild(this.build(child, node.rect));
     return frame;
@@ -89,6 +98,7 @@ class Builder {
         : 'NONE';
     const align = TEXT_ALIGN[style.textAlign] ?? 'LEFT';
     text.textAlignHorizontal = align;
+    text.effects = shadowEffects(style.textShadow);
 
     // Figma's text metrics differ slightly from the browser's, so a fixed width can
     // wrap single lines unexpectedly. Let single lines grow and re-anchor them to
@@ -128,7 +138,19 @@ class Builder {
     return svg;
   }
 
-  /** Gray box standing in for images (and SVGs Figma cannot parse). */
+  image(node: HtmlImage, parent: Rect): RectangleNode {
+    const image = this.images.get(node.src);
+    if (!image) return this.placeholder(node, parent);
+    const rect = figma.createRectangle();
+    rect.name = node.name;
+    this.place(rect, node.rect, parent);
+    applyBoxStyle(rect, node.style, node.rect, this.images);
+    // The picture sits above the element's own background.
+    if (node.style.visible) rect.fills = [...(rect.fills as Paint[]), objectFitPaint(image, node.objectFit)];
+    return rect;
+  }
+
+  /** Gray box standing in for images that failed to load and SVGs Figma cannot parse. */
   placeholder(node: HtmlImage | HtmlSvg, parent: Rect): RectangleNode {
     const rect = figma.createRectangle();
     rect.name = node.name;
@@ -142,16 +164,17 @@ class Builder {
   }
 }
 
-function applyBoxStyle(frame: FrameNode, style: BoxStyle) {
+function applyBoxStyle(frame: BoxNode, style: BoxStyle, rect: Rect, images: Map<string, LoadedImage>) {
   frame.opacity = style.opacity;
   [frame.topLeftRadius, frame.topRightRadius, frame.bottomRightRadius, frame.bottomLeftRadius] = style.radii;
 
   frame.fills = [];
   frame.strokes = [];
+  frame.effects = [];
   if (!style.visible) return;
 
-  const background = solidPaint(style.backgroundColor);
-  if (background) frame.fills = [background];
+  frame.fills = backgroundPaints(style, rect.width, rect.height, images);
+  frame.effects = shadowEffects(style.boxShadow);
 
   // Figma has one stroke paint per node but per-side weights: use the first
   // visible side's color. CSS borders sit inside the border box.
@@ -172,14 +195,15 @@ function applyBoxStyle(frame: FrameNode, style: BoxStyle) {
   else if (lineStyle === 'dotted') frame.dashPattern = [w, w];
 }
 
-export async function buildDocument(tree: HtmlFrame): Promise<BuildResult> {
-  const fonts = await loadFonts(tree);
-  const builder = new Builder(fonts);
+export async function buildDocument(tree: HtmlFrame, assets: ImageAssets): Promise<BuildResult> {
+  const [fonts, images] = await Promise.all([loadFonts(tree), loadImages(tree, assets)]);
+  const builder = new Builder(fonts, images.bySrc);
   const root = builder.frame(tree, tree.rect);
   return {
     root,
     layerCount: builder.layerCount + 1,
     missingFonts: [...fonts.missing],
     failedSvgs: builder.failedSvgs,
+    failedImages: images.failed,
   };
 }
